@@ -23,30 +23,33 @@ class DashboardController extends Controller
         $totalCategories = $hasCategories ? KategoriBuku::count() : 0;
         $totalLoans = $hasLoans ? Peminjaman::count() : 0;
 
-        $activeLoans = $hasLoans
+        $activeLoans = $hasLoans && Schema::hasColumn('peminjaman', 'tgl_kembali')
             ? Peminjaman::whereNull('tgl_kembali')->count()
             : 0;
 
-        $overdueLoans = $hasLoans
-            ? Peminjaman::whereNull('tgl_kembali')
-                ->whereDate('tgl_jatuh_tempo', '<', today())
-                ->count()
+        $dueDateColumn = $hasLoans && Schema::hasColumn('peminjaman', 'tgl_jatuh_tempo')
+            ? 'tgl_jatuh_tempo'
+            : ($hasLoans && Schema::hasColumn('peminjaman', 'tgl_tatuh_tempo') ? 'tgl_tatuh_tempo' : null);
+
+        $overdueLoans = $dueDateColumn && Schema::hasColumn('peminjaman', 'tgl_kembali')
+            ? Peminjaman::whereNull('tgl_kembali')->whereDate($dueDateColumn, '<', today())->count()
             : 0;
 
         $recentLoans = collect();
         if ($hasLoans && $hasMembers && $hasBooks) {
-            $recentLoans = Peminjaman::with(['anggota', 'buku'])
-                ->orderByDesc('tgl_pinjam')
-                ->limit(6)
-                ->get();
+            $query = Peminjaman::with(['anggota', 'buku']);
+
+            if (Schema::hasColumn('peminjaman', 'tgl_pinjam')) {
+                $query->orderByDesc('tgl_pinjam');
+            } else {
+                $query->orderByDesc('id_pinjam');
+            }
+
+            $recentLoans = $query->limit(6)->get();
         }
 
         $lowStockBooks = $hasBooks
-            ? Buku::with('kategori')
-                ->where('stok', '<=', 2)
-                ->orderBy('stok')
-                ->limit(5)
-                ->get()
+            ? Buku::with('kategori')->where('stok', '<=', 2)->orderBy('stok')->limit(5)->get()
             : collect();
 
         return view('dashboard', compact(
